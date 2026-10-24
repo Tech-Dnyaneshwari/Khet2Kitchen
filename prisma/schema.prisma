@@ -1,0 +1,521 @@
+// SQLite schema fallback for local development without external PostgreSQL installation
+// Toggle between PostgreSQL and SQLite using:
+// npm run db:use-sqlite OR npm run db:use-postgres
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String
+  role         String   @default("BUYER") // FARMER, BUYER, TRANSPORT_PARTNER, ADMIN
+  isActive     Boolean  @default(true)
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  farmerProfile           FarmerProfile?
+  businessProfile         BusinessProfile?
+  transportPartnerProfile TransportPartnerProfile?
+  addresses               Address[]
+  notifications           Notification[]
+  auditLogs               AuditLog[]
+  supportTickets          SupportTicket[]
+  verificationRequests    VerificationRequest[]
+  ordersPlaced            Order[]                 @relation("BuyerOrders")
+  reviewsWritten          Review[]                @relation("BuyerReviews")
+  statusChangesPerformed  OrderStatusHistory[]    @relation("StatusChanger")
+
+  @@index([email])
+  @@index([role])
+}
+
+model FarmerProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farmName           String
+  village            String
+  taluka             String
+  district           String
+  state              String   @default("Maharashtra")
+  pinCode            String
+  landSizeAcres      Float?
+  primaryCrops       String   @default("Tomato,Onion,Potato")
+  bankAccountNo      String?
+  bankIfsc           String?
+  bankName           String?
+  isVerified         Boolean  @default(false)
+  verificationStatus String   @default("PENDING")
+  verificationNotes  String?
+  rating             Float    @default(5.0)
+  reviewsCount       Int      @default(0)
+  totalEarnings      Float    @default(0.0)
+  middlemanSaved     Float    @default(0.0)
+  coordinatesLat     Float?
+  coordinatesLng     Float?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  listings          ProduceListing[]
+  ordersReceived    Order[]            @relation("FarmerOrders")
+  reviewsReceived   Review[]           @relation("FarmerReviews")
+  commissionRecords CommissionRecord[]
+  featuredListings  FeaturedListing[]
+
+  @@index([district])
+  @@index([isVerified])
+}
+
+model BusinessProfile {
+  id                      String   @id @default(uuid())
+  userId                  String   @unique
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName            String
+  businessType            String   @default("RESTAURANT") // RESTAURANT, HOTEL, MESS, HOSTEL, CANTEEN, CATERER
+  contactPerson           String
+  gstin                   String?
+  city                    String
+  district                String
+  state                   String   @default("Maharashtra")
+  pinCode                 String
+  isVerified              Boolean  @default(false)
+  verificationStatus      String   @default("PENDING")
+  monthlyProcurementSpent Float    @default(0.0)
+  coordinatesLat          Float?
+  coordinatesLng          Float?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  subscriptions BusinessSubscription[]
+
+  @@index([district])
+  @@index([businessType])
+}
+
+model TransportPartnerProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleType        String   @default("MINI_TRUCK")
+  vehicleNumber      String   @unique
+  maxPayloadKg       Float
+  drivingLicenseNo   String
+  isVerified         Boolean  @default(false)
+  verificationStatus String   @default("PENDING")
+  isAvailable        Boolean  @default(true)
+  currentLocation    String?
+  rating             Float    @default(5.0)
+  totalTrips         Int      @default(0)
+  totalEarnings      Float    @default(0.0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  deliveries Delivery[]
+
+  @@index([isAvailable])
+}
+
+model Address {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label          String   @default("Kitchen")
+  street         String
+  landmark       String?
+  city           String
+  district       String
+  state          String   @default("Maharashtra")
+  pinCode        String
+  coordinatesLat Float?
+  coordinatesLng Float?
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  orders Order[]
+
+  @@index([userId])
+}
+
+model ProductCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  listings ProduceListing[]
+}
+
+model ProduceListing {
+  id                 String          @id @default(uuid())
+  farmerId           String
+  farmer             FarmerProfile   @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  categoryId         String
+  category           ProductCategory @relation(fields: [categoryId], references: [id])
+  name               String
+  slug               String
+  description        String
+  qualityGrade       String          @default("GRADE_A") // GRADE_A, GRADE_B, PREMIUM, ORGANIC
+  unit               String          @default("kg")
+  pricePerUnit       Float
+  availableStockKg   Float
+  minOrderQuantityKg Float
+  harvestDate        String
+  availabilityDate   String
+  status             String          @default("ACTIVE") // ACTIVE, PAUSED, OUT_OF_STOCK, ARCHIVED
+  isFeatured         Boolean         @default(false)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  images             ProductImage[]
+  inventoryMovements InventoryMovement[]
+  cartItems          CartItem[]
+  orderItems         OrderItem[]
+  featuredListing    FeaturedListing?
+
+  @@index([farmerId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([pricePerUnit])
+}
+
+model ProductImage {
+  id        String         @id @default(uuid())
+  produceId String
+  produce   ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  isPrimary Boolean        @default(false)
+  order     Int            @default(0)
+
+  @@index([produceId])
+}
+
+model InventoryMovement {
+  id             String         @id @default(uuid())
+  produceId      String
+  produce        ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  orderId        String?
+  changeAmountKg Float
+  balanceAfterKg Float
+  movementType   String
+  note           String?
+  createdAt      DateTime       @default(now())
+
+  @@index([produceId])
+  @@index([orderId])
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  buyerId   String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  items CartItem[]
+}
+
+model CartItem {
+  id                String         @id @default(uuid())
+  cartId            String
+  cart              Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  produceId         String
+  produce           ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  quantityKg        Float
+  unitPriceSnapshot Float
+  addedAt           DateTime       @default(now())
+
+  @@unique([cartId, produceId])
+}
+
+model Order {
+  id                    String      @id @default(uuid())
+  orderNumber           String      @unique
+  buyerId               String
+  buyer                 User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  farmerId              String
+  farmer                FarmerProfile @relation("FarmerOrders", fields: [farmerId], references: [id])
+  status                String      @default("PENDING_FARMER_CONFIRMATION")
+  subtotal              Float
+  deliveryFee           Float       @default(0.0)
+  platformCommission    Float       @default(0.0)
+  taxAmount             Float       @default(0.0)
+  totalAmount           Float
+  fulfillmentType       String      @default("KHET2KITCHEN_DELIVERY")
+  deliveryAddressId     String?
+  deliveryAddress       Address?    @relation(fields: [deliveryAddressId], references: [id])
+  preferredDeliveryDate String?
+  preferredTimeSlot     String?
+  farmerNotes           String?
+  cancellationReason    String?
+  rejectionReason       String?
+  qrPasscode            String      @default("OTP-1234")
+  invoiceNumber         String      @unique
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  items            OrderItem[]
+  statusHistory    OrderStatusHistory[]
+  delivery         Delivery?
+  payment          Payment?
+  commissionRecord CommissionRecord?
+  review           Review?
+
+  @@index([buyerId])
+  @@index([farmerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id           String         @id @default(uuid())
+  orderId      String
+  order        Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  produceId    String
+  produce      ProduceListing @relation(fields: [produceId], references: [id])
+  productName  String
+  qualityGrade String
+  unit         String         @default("kg")
+  quantity     Float
+  unitPrice    Float
+  subtotal     Float
+
+  @@index([orderId])
+  @@index([produceId])
+}
+
+model OrderStatusHistory {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus  String
+  toStatus    String
+  changedById String
+  changedBy   User     @relation("StatusChanger", fields: [changedById], references: [id])
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+}
+
+model Delivery {
+  id                      String                  @id @default(uuid())
+  orderId                 String                  @unique
+  order                   Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  transportPartnerId      String?
+  transportPartner        TransportPartnerProfile? @relation(fields: [transportPartnerId], references: [id])
+  pickupAddress           String
+  deliveryAddress         String
+  estimatedDistanceKm     Float
+  baseFee                 Float
+  perKmFee                Float
+  totalFee                Float
+  platformLogisticsMargin Float                   @default(0.0)
+  driverPayout            Float                   @default(0.0)
+  status                  String                  @default("REQUESTED")
+  proofOfDeliveryNotes    String?
+  proofOfDeliveryUrl      String?
+  assignedAt              DateTime?
+  pickedUpAt              DateTime?
+  deliveredAt             DateTime?
+  failedReason            String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  @@index([transportPartnerId])
+  @@index([status])
+}
+
+model Payment {
+  id                     String   @id @default(uuid())
+  orderId                String   @unique
+  order                  Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount                 Float
+  currency               String   @default("INR")
+  method                 String   @default("MOCK_UPI")
+  status                 String   @default("PENDING")
+  providerTransactionRef String?
+  paidAt                 DateTime?
+  failureReason          String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  refunds Refund[]
+
+  @@index([status])
+}
+
+model Refund {
+  id          String   @id @default(uuid())
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  orderId     String
+  amount      Float
+  reason      String
+  status      String   @default("PROCESSED")
+  processedAt DateTime @default(now())
+
+  @@index([paymentId])
+}
+
+model CommissionRecord {
+  id                    String        @id @default(uuid())
+  orderId               String        @unique
+  order                 Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  farmerId              String
+  farmer                FarmerProfile @relation(fields: [farmerId], references: [id])
+  grossSubtotal         Float
+  commissionRatePercent Float
+  commissionAmount      Float
+  netFarmerPayout       Float
+  status                String        @default("ACCRUED")
+  createdAt             DateTime      @default(now())
+
+  @@index([farmerId])
+  @@index([status])
+}
+
+model SubscriptionPlan {
+  id                  String   @id @default(uuid())
+  name                String
+  slug                String   @unique
+  tier                String
+  monthlyPrice        Float
+  maxOrdersPerMonth   Int      @default(9999)
+  hasPriorityDelivery Boolean  @default(true)
+  hasDedicatedSupport Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+
+  subscriptions BusinessSubscription[]
+}
+
+model BusinessSubscription {
+  id         String           @id @default(uuid())
+  businessId String
+  business   BusinessProfile  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  planId     String
+  plan       SubscriptionPlan @relation(fields: [planId], references: [id])
+  startDate  DateTime         @default(now())
+  endDate    DateTime
+  status     String           @default("ACTIVE")
+  autoRenew  Boolean          @default(true)
+  amountPaid Float
+  createdAt  DateTime         @default(now())
+
+  @@index([businessId])
+  @@index([status])
+}
+
+model FeaturedListing {
+  id        String         @id @default(uuid())
+  produceId String         @unique
+  produce   ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  farmerId  String
+  farmer    FarmerProfile  @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  feePaid   Float
+  startDate DateTime       @default(now())
+  endDate   DateTime
+  isActive  Boolean        @default(true)
+
+  @@index([isActive])
+}
+
+model Review {
+  id        String        @id @default(uuid())
+  orderId   String        @unique
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  farmerId  String
+  farmer    FarmerProfile @relation("FarmerReviews", fields: [farmerId], references: [id], onDelete: Cascade)
+  buyerId   String
+  buyer     User          @relation("BuyerReviews", fields: [buyerId], references: [id], onDelete: Cascade)
+  rating    Int           @default(5)
+  comment   String?
+  isPublic  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+
+  @@index([farmerId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model SupportTicket {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject         String
+  category        String
+  message         String
+  priority        String   @default("NORMAL")
+  status          String   @default("OPEN")
+  resolutionNotes String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model VerificationRequest {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         String
+  documentType String
+  documentUrl  String
+  status       String   @default("PENDING")
+  adminNotes   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+model PlatformSettings {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String
+  entityType  String
+  entityId    String?
+  detailsJson String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+}

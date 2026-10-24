@@ -1,0 +1,635 @@
+// Prisma schema for Khet2Kitchen direct B2B Agricultural Marketplace
+// Engine: PostgreSQL (Standard production & Docker Compose)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  FARMER
+  BUYER
+  TRANSPORT_PARTNER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING_FARMER_CONFIRMATION
+  ACCEPTED
+  PREPARING
+  READY_FOR_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+  REJECTED
+}
+
+enum FulfillmentType {
+  FARM_GATE_PICKUP
+  KHET2KITCHEN_DELIVERY
+}
+
+enum DeliveryStatus {
+  REQUESTED
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum QualityGrade {
+  GRADE_A
+  GRADE_B
+  PREMIUM
+  ORGANIC
+}
+
+enum ProduceStatus {
+  ACTIVE
+  PAUSED
+  OUT_OF_STOCK
+  ARCHIVED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  MOCK_UPI
+  MOCK_NET_BANKING
+  RAZORPAY
+  CASH_ON_DELIVERY
+  INSTITUTIONAL_CREDIT_NET30
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BusinessType {
+  RESTAURANT
+  HOTEL
+  MESS
+  HOSTEL
+  CANTEEN
+  CATERER
+  OTHER
+}
+
+enum VehicleType {
+  MINI_TRUCK
+  TEMPO
+  PICKUP_VAN
+  AUTO_LOADER
+  OTHER
+}
+
+// -------------------------------------------------------------
+// USER & PROFILES
+// -------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String
+  role         Role     @default(BUYER)
+  isActive     Boolean  @default(true)
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  farmerProfile           FarmerProfile?
+  businessProfile         BusinessProfile?
+  transportPartnerProfile TransportPartnerProfile?
+  addresses               Address[]
+  notifications           Notification[]
+  auditLogs               AuditLog[]
+  supportTickets          SupportTicket[]
+  verificationRequests    VerificationRequest[]
+  ordersPlaced            Order[]                 @relation("BuyerOrders")
+  reviewsWritten          Review[]                @relation("BuyerReviews")
+  statusChangesPerformed  OrderStatusHistory[]    @relation("StatusChanger")
+
+  @@index([email])
+  @@index([role])
+}
+
+model FarmerProfile {
+  id               String             @id @default(uuid())
+  userId           String             @unique
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farmName         String
+  village          String
+  taluka           String
+  district         String
+  state            String             @default("Maharashtra")
+  pinCode          String
+  landSizeAcres    Decimal?           @db.Decimal(10, 2)
+  primaryCrops     String[]
+  bankAccountNo    String?
+  bankIfsc         String?
+  bankName         String?
+  isVerified       Boolean            @default(false)
+  verificationStatus VerificationStatus @default(PENDING)
+  verificationNotes String?
+  rating           Decimal            @default(5.0) @db.Decimal(3, 2)
+  reviewsCount     Int                @default(0)
+  totalEarnings    Decimal            @default(0.0) @db.Decimal(12, 2)
+  middlemanSaved   Decimal            @default(0.0) @db.Decimal(12, 2)
+  coordinatesLat   Decimal?           @db.Decimal(10, 6)
+  coordinatesLng   Decimal?           @db.Decimal(10, 6)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  listings          ProduceListing[]
+  ordersReceived    Order[]            @relation("FarmerOrders")
+  reviewsReceived   Review[]           @relation("FarmerReviews")
+  commissionRecords CommissionRecord[]
+  featuredListings  FeaturedListing[]
+
+  @@index([district])
+  @@index([isVerified])
+}
+
+model BusinessProfile {
+  id                      String             @id @default(uuid())
+  userId                  String             @unique
+  user                    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName            String
+  businessType            BusinessType       @default(RESTAURANT)
+  contactPerson           String
+  gstin                   String?
+  city                    String
+  district                String
+  state                   String             @default("Maharashtra")
+  pinCode                 String
+  isVerified              Boolean            @default(false)
+  verificationStatus      VerificationStatus @default(PENDING)
+  monthlyProcurementSpent Decimal            @default(0.0) @db.Decimal(12, 2)
+  coordinatesLat          Decimal?           @db.Decimal(10, 6)
+  coordinatesLng          Decimal?           @db.Decimal(10, 6)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  subscriptions BusinessSubscription[]
+
+  @@index([district])
+  @@index([businessType])
+}
+
+model TransportPartnerProfile {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleType        VehicleType        @default(MINI_TRUCK)
+  vehicleNumber      String             @unique
+  maxPayloadKg       Decimal            @db.Decimal(10, 2)
+  drivingLicenseNo   String
+  isVerified         Boolean            @default(false)
+  verificationStatus VerificationStatus @default(PENDING)
+  isAvailable        Boolean            @default(true)
+  currentLocation    String?
+  rating             Decimal            @default(5.0) @db.Decimal(3, 2)
+  totalTrips         Int                @default(0)
+  totalEarnings      Decimal            @default(0.0) @db.Decimal(12, 2)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  deliveries Delivery[]
+
+  @@index([isAvailable])
+}
+
+model Address {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label          String   @default("Kitchen")
+  street         String
+  landmark       String?
+  city           String
+  district       String
+  state          String   @default("Maharashtra")
+  pinCode        String
+  coordinatesLat Decimal? @db.Decimal(10, 6)
+  coordinatesLng Decimal? @db.Decimal(10, 6)
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  orders Order[]
+
+  @@index([userId])
+}
+
+// -------------------------------------------------------------
+// PRODUCE CATALOG & INVENTORY
+// -------------------------------------------------------------
+
+model ProductCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  listings ProduceListing[]
+}
+
+model ProduceListing {
+  id                 String        @id @default(uuid())
+  farmerId           String
+  farmer             FarmerProfile @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  categoryId         String
+  category           ProductCategory @relation(fields: [categoryId], references: [id])
+  name               String
+  slug               String
+  description        String
+  qualityGrade       QualityGrade  @default(GRADE_A)
+  unit               String        @default("kg")
+  pricePerUnit       Decimal       @db.Decimal(10, 2)
+  availableStockKg   Decimal       @db.Decimal(10, 2)
+  minOrderQuantityKg Decimal       @db.Decimal(10, 2)
+  harvestDate        String
+  availabilityDate   String
+  status             ProduceStatus @default(ACTIVE)
+  isFeatured         Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  images             ProductImage[]
+  inventoryMovements InventoryMovement[]
+  cartItems          CartItem[]
+  orderItems         OrderItem[]
+  featuredListing    FeaturedListing?
+
+  @@index([farmerId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([pricePerUnit])
+}
+
+model ProductImage {
+  id        String         @id @default(uuid())
+  produceId String
+  produce   ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  isPrimary Boolean        @default(false)
+  order     Int            @default(0)
+
+  @@index([produceId])
+}
+
+model InventoryMovement {
+  id               String         @id @default(uuid())
+  produceId        String
+  produce          ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  orderId          String?
+  changeAmountKg   Decimal        @db.Decimal(10, 2) // negative for deduction, positive for addition
+  balanceAfterKg   Decimal        @db.Decimal(10, 2)
+  movementType     String         // e.g. "HARVEST_ADD", "ORDER_RESERVATION", "ORDER_FULFILLED", "ORDER_CANCELLED_RESTORE", "MANUAL_ADJUSTMENT"
+  note             String?
+  createdAt        DateTime       @default(now())
+
+  @@index([produceId])
+  @@index([orderId])
+}
+
+// -------------------------------------------------------------
+// CART
+// -------------------------------------------------------------
+
+model Cart {
+  id        String     @id @default(uuid())
+  buyerId   String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  items     CartItem[]
+}
+
+model CartItem {
+  id                 String         @id @default(uuid())
+  cartId             String
+  cart               Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  produceId          String
+  produce            ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  quantityKg         Decimal        @db.Decimal(10, 2)
+  unitPriceSnapshot  Decimal        @db.Decimal(10, 2)
+  addedAt            DateTime       @default(now())
+
+  @@unique([cartId, produceId])
+}
+
+// -------------------------------------------------------------
+// ORDER LIFECYCLE & FINANCIALS
+// -------------------------------------------------------------
+
+model Order {
+  id                  String          @id @default(uuid())
+  orderNumber         String          @unique
+  buyerId             String
+  buyer               User            @relation("BuyerOrders", fields: [buyerId], references: [id])
+  farmerId            String
+  farmer              FarmerProfile   @relation("FarmerOrders", fields: [farmerId], references: [id])
+  status              OrderStatus     @default(PENDING_FARMER_CONFIRMATION)
+  subtotal            Decimal         @db.Decimal(12, 2)
+  deliveryFee         Decimal         @default(0.0) @db.Decimal(10, 2)
+  platformCommission  Decimal         @default(0.0) @db.Decimal(10, 2)
+  taxAmount           Decimal         @default(0.0) @db.Decimal(10, 2)
+  totalAmount         Decimal         @db.Decimal(12, 2)
+  fulfillmentType     FulfillmentType @default(KHET2KITCHEN_DELIVERY)
+  deliveryAddressId   String?
+  deliveryAddress     Address?        @relation(fields: [deliveryAddressId], references: [id])
+  preferredDeliveryDate String?
+  preferredTimeSlot   String?
+  farmerNotes         String?
+  cancellationReason  String?
+  rejectionReason     String?
+  qrPasscode          String          @default("OTP-1234")
+  invoiceNumber       String          @unique
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  items               OrderItem[]
+  statusHistory       OrderStatusHistory[]
+  delivery            Delivery?
+  payment             Payment?
+  commissionRecord    CommissionRecord?
+  review              Review?
+
+  @@index([buyerId])
+  @@index([farmerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id           String         @id @default(uuid())
+  orderId      String
+  order        Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  produceId    String
+  produce      ProduceListing @relation(fields: [produceId], references: [id])
+  productName  String
+  qualityGrade QualityGrade
+  unit         String         @default("kg")
+  quantity     Decimal        @db.Decimal(10, 2)
+  unitPrice    Decimal        @db.Decimal(10, 2)
+  subtotal     Decimal        @db.Decimal(12, 2)
+
+  @@index([orderId])
+  @@index([produceId])
+}
+
+model OrderStatusHistory {
+  id          String      @id @default(uuid())
+  orderId     String
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus  OrderStatus
+  toStatus    OrderStatus
+  changedById String
+  changedBy   User        @relation("StatusChanger", fields: [changedById], references: [id])
+  note        String?
+  createdAt   DateTime    @default(now())
+
+  @@index([orderId])
+}
+
+model Delivery {
+  id                     String                  @id @default(uuid())
+  orderId                String                  @unique
+  order                  Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  transportPartnerId     String?
+  transportPartner       TransportPartnerProfile? @relation(fields: [transportPartnerId], references: [id])
+  pickupAddress          String
+  deliveryAddress        String
+  estimatedDistanceKm    Decimal                 @db.Decimal(8, 2)
+  baseFee                Decimal                 @db.Decimal(10, 2)
+  perKmFee               Decimal                 @db.Decimal(10, 2)
+  totalFee               Decimal                 @db.Decimal(10, 2)
+  platformLogisticsMargin Decimal                @default(0.0) @db.Decimal(10, 2)
+  driverPayout           Decimal                 @default(0.0) @db.Decimal(10, 2)
+  status                 DeliveryStatus          @default(REQUESTED)
+  proofOfDeliveryNotes   String?
+  proofOfDeliveryUrl     String?
+  assignedAt             DateTime?
+  pickedUpAt             DateTime?
+  deliveredAt            DateTime?
+  failedReason           String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  @@index([transportPartnerId])
+  @@index([status])
+}
+
+model Payment {
+  id                     String        @id @default(uuid())
+  orderId                String        @unique
+  order                  Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount                 Decimal       @db.Decimal(12, 2)
+  currency               String        @default("INR")
+  method                 PaymentMethod @default(MOCK_UPI)
+  status                 PaymentStatus @default(PENDING)
+  providerTransactionRef String?
+  paidAt                 DateTime?
+  failureReason          String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  refunds Refund[]
+
+  @@index([status])
+}
+
+model Refund {
+  id          String   @id @default(uuid())
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  orderId     String
+  amount      Decimal  @db.Decimal(12, 2)
+  reason      String
+  status      String   @default("PROCESSED") // REQUESTED, PROCESSED, REJECTED
+  processedAt DateTime @default(now())
+
+  @@index([paymentId])
+}
+
+model CommissionRecord {
+  id                     String        @id @default(uuid())
+  orderId                String        @unique
+  order                  Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  farmerId               String
+  farmer                 FarmerProfile @relation(fields: [farmerId], references: [id])
+  grossSubtotal          Decimal       @db.Decimal(12, 2)
+  commissionRatePercent  Decimal       @db.Decimal(5, 2)
+  commissionAmount       Decimal       @db.Decimal(10, 2)
+  netFarmerPayout        Decimal       @db.Decimal(12, 2)
+  status                 String        @default("ACCRUED") // ACCRUED, SETTLED
+  createdAt              DateTime      @default(now())
+
+  @@index([farmerId])
+  @@index([status])
+}
+
+// -------------------------------------------------------------
+// SUBSCRIPTIONS & MONETIZATION
+// -------------------------------------------------------------
+
+model SubscriptionPlan {
+  id                   String   @id @default(uuid())
+  name                 String
+  slug                 String   @unique
+  tier                 String   // e.g. "STARTER", "PRO_KITCHEN", "INSTITUTIONAL"
+  monthlyPrice         Decimal  @db.Decimal(10, 2)
+  maxOrdersPerMonth    Int      @default(9999)
+  hasPriorityDelivery  Boolean  @default(true)
+  hasDedicatedSupport  Boolean  @default(false)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  subscriptions BusinessSubscription[]
+}
+
+model BusinessSubscription {
+  id           String           @id @default(uuid())
+  businessId   String
+  business     BusinessProfile  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  planId       String
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+  startDate    DateTime         @default(now())
+  endDate      DateTime
+  status       String           @default("ACTIVE") // ACTIVE, EXPIRED, CANCELLED
+  autoRenew    Boolean          @default(true)
+  amountPaid   Decimal          @db.Decimal(10, 2)
+  createdAt    DateTime         @default(now())
+
+  @@index([businessId])
+  @@index([status])
+}
+
+model FeaturedListing {
+  id        String         @id @default(uuid())
+  produceId String         @unique
+  produce   ProduceListing @relation(fields: [produceId], references: [id], onDelete: Cascade)
+  farmerId  String
+  farmer    FarmerProfile  @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  feePaid   Decimal        @db.Decimal(10, 2)
+  startDate DateTime       @default(now())
+  endDate   DateTime
+  isActive  Boolean        @default(true)
+
+  @@index([isActive])
+}
+
+// -------------------------------------------------------------
+// REVIEWS & NOTIFICATIONS & SUPPORT
+// -------------------------------------------------------------
+
+model Review {
+  id        String        @id @default(uuid())
+  orderId   String        @unique
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  farmerId  String
+  farmer    FarmerProfile @relation("FarmerReviews", fields: [farmerId], references: [id], onDelete: Cascade)
+  buyerId   String
+  buyer     User          @relation("BuyerReviews", fields: [buyerId], references: [id], onDelete: Cascade)
+  rating    Int           @default(5)
+  comment   String?
+  isPublic  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+
+  @@index([farmerId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   // ORDER_UPDATE, DELIVERY_UPDATE, VERIFICATION_UPDATE, SYSTEM
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model SupportTicket {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject         String
+  category        String   // ORDER_ISSUE, QUALITY_DISPUTE, PAYMENT, TRANSPORT, ACCOUNT
+  message         String
+  priority        String   @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  status          String   @default("OPEN")   // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  resolutionNotes String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model VerificationRequest {
+  id           String             @id @default(uuid())
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         Role
+  documentType String             // 7/12_EXTRACT, AADHAAR, FSSAI_LICENSE, GST_CERTIFICATE, DRIVING_LICENSE, VEHICLE_RC
+  documentUrl  String
+  status       VerificationStatus @default(PENDING)
+  adminNotes   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime           @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+// -------------------------------------------------------------
+// ADMIN SETTINGS & AUDIT LOGS
+// -------------------------------------------------------------
+
+model PlatformSettings {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String   // USER_SUSPENDED, VERIFICATION_APPROVED, COMMISSION_RATE_CHANGED, ORDER_OVERRIDE
+  entityType  String   // USER, ORDER, PRODUCE, SETTINGS
+  entityId    String?
+  detailsJson String?  @db.Text
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+}

@@ -1,0 +1,16 @@
+
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+.turbo/
+.DS_Store
+*.log
+.env*
+!.env.example
+!.env.*.example
+tsconfig.tsbuildinfo
+.antigravity/
+backup_vite/
